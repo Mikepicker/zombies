@@ -106,6 +106,8 @@ bool loadMedia() {
     // Init background
     background.texture = loadTexture("assets/background.png");
     SDL_QueryTexture(background.texture, NULL, NULL, &background.w, &background.h);
+    background.x = 0;
+    background.y = SCREEN_HEIGHT-background.h;
 
     if (background.texture == NULL) {
         printf("Failed to load background!\n");
@@ -217,7 +219,7 @@ void update() {
 void render() {
 
     // Render bg
-    SDL_Rect dst = { .x = 0, .y = SCREEN_HEIGHT-background.h, .w = background.w, .h = background.h };
+    SDL_Rect dst = { .x = background.x, .y = background.y, .w = background.w, .h = background.h };
     SDL_RenderCopy(gRenderer, background.texture, NULL, &dst);
 
     // Render platform
