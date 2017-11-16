@@ -28,6 +28,7 @@ SDL_Renderer* gRenderer = NULL;
 
 // Game objects
 struct Background {
+    int x, y, w, h;
     SDL_Texture* texture;
 };
 
@@ -104,6 +105,7 @@ bool loadMedia() {
 
     // Init background
     background.texture = loadTexture("assets/background.png");
+    SDL_QueryTexture(background.texture, NULL, NULL, &background.w, &background.h);
 
     if (background.texture == NULL) {
         printf("Failed to load background!\n");
@@ -215,7 +217,7 @@ void update() {
 void render() {
 
     // Render bg
-    SDL_Rect dst = { .x = 0, .y = SCREEN_HEIGHT-128, .w = 512, .h = 128 };
+    SDL_Rect dst = { .x = 0, .y = SCREEN_HEIGHT-background.h, .w = background.w, .h = background.h };
     SDL_RenderCopy(gRenderer, background.texture, NULL, &dst);
 
     // Render platform
