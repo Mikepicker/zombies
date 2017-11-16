@@ -43,12 +43,26 @@ struct Survivor {
     int frameX, frameY;
     int animSpeed = 6;
     int speed = 3;
+    bool animCompleted = false;
+    bool shot = false;
+    std::string state;
     SDL_Texture* texture;
+};
+
+const int BULLET_COUNT = 10;
+SDL_Texture* bulletTexture;
+int bulletWidth, bulletHeight;
+int bulletSpeed = 20;
+struct Bullet {
+    int x, y;
+    int dir = 1;
+    bool alive = false;
 };
 
 struct Background background;
 struct Platform platform;
 struct Survivor survivor;
+struct Bullet bullets[BULLET_COUNT];
 
 // World
 struct World {
@@ -134,11 +148,16 @@ bool loadMedia() {
     survivor.scaleX = 1;
     survivor.scaleY = 1;
     survivor.frameX = 0;
+    survivor.state = "state_idle";
 
     if (survivor.texture == NULL) {
         printf("Failed to load survivor texture!\n");
         success = false;
     }
+
+    // Init bullet
+    bulletTexture = loadTexture("assets/bullet.png");
+    SDL_QueryTexture(bulletTexture, NULL, NULL, &bulletWidth, &bulletHeight);
 
     return success;
 }
@@ -176,6 +195,9 @@ void close() {
     SDL_DestroyTexture(survivor.texture);
     survivor.texture = NULL;
 
+    SDL_DestroyTexture(bulletTexture);
+    bulletTexture = NULL;
+
     //Destroy window
     SDL_DestroyRenderer(gRenderer);
     SDL_DestroyWindow(gWindow);
@@ -185,6 +207,25 @@ void close() {
     //Quit SDL subsystems
     IMG_Quit();
     SDL_Quit();
+}
+
+// Utils
+void shootBullet() {
+
+    for (int i = 0; i < BULLET_COUNT; i++) {
+        if (!bullets[i].alive) {
+            if (survivor.scaleX == 1) {
+                bullets[i].x = survivor.x + 48;
+            } else {
+                bullets[i].x = survivor.x + 16;
+            }
+
+            bullets[i].y = survivor.y + 32;
+            bullets[i].dir = survivor.scaleX;
+            bullets[i].alive = true;
+            return;
+        }
+    }
 }
 
 // Game logic
@@ -203,20 +244,60 @@ void update() {
 
     // Input processing
     const Uint8* keys = SDL_GetKeyboardState(NULL);
-    if (keys[SDL_SCANCODE_D]) {
-        survivor.x += survivor.speed;
-        survivor.scaleX = 1;
-        survivor.frameY = 1;
-    } else if (keys[SDL_SCANCODE_A]) {
-        survivor.x -= survivor.speed;
-        survivor.scaleX = -1;
-        survivor.frameY = 1;
-    } else {
-        survivor.frameY = 0;
+    if (survivor.state != "state_shoot") {
+        if (keys[SDL_SCANCODE_D]) {
+            survivor.x += survivor.speed;
+            survivor.scaleX = 1;
+            survivor.frameY = 1;
+            survivor.state = "state_walk";
+        } else if (keys[SDL_SCANCODE_A]) {
+            survivor.x -= survivor.speed;
+            survivor.scaleX = -1;
+            survivor.frameY = 1;
+            survivor.state = "state_walk";
+        } else if (keys[SDL_SCANCODE_J]) {
+            survivor.frameX = 0;
+            survivor.frameY = 2;
+            survivor.animCompleted = false;
+            survivor.shot = false;
+            survivor.state = "state_shoot";
+        } else {
+            survivor.frameX = 0;
+            survivor.frameY = 0;
+            survivor.state = "state_idle";
+        }
+    }
+
+    // Player states
+    if (survivor.state == "state_shoot") {
+
+        if (survivor.frameX / survivor.animSpeed == 2 && !survivor.shot) {
+            survivor.shot = true;
+            shootBullet();
+        }
+
+        if (survivor.animCompleted) {
+            survivor.frameY = 0;
+            survivor.state = "state_idle";
+        }
+    }
+
+    // Bullets
+    for (int i = 0; i < BULLET_COUNT; i++) {
+        if (bullets[i].alive) {
+            bullets[i].x += bulletSpeed * bullets[i].dir;
+
+            if (bullets[i].x + bulletWidth < 0 || bullets[i].x > SCREEN_WIDTH) {
+                bullets[i].alive = false;
+            }
+        }
     }
 }
 
 void render() {
+
+    // Clear screen
+    SDL_RenderClear(gRenderer);
 
     // Render bg
     SDL_Rect dst = { .x = background.x, .y = background.y, .w = background.w, .h = background.h };
@@ -226,16 +307,29 @@ void render() {
     SDL_Rect dstPlatf = { .x = platform.x, .y = platform.y, .w = platform.w, .h = platform.h };
     SDL_RenderCopy(gRenderer, platform.texture, NULL, &dstPlatf);
 
+    // Render bullets
+    for (int i = 0; i < BULLET_COUNT; i++) {
+        if (bullets[i].alive) {
+            SDL_Rect dstBullet = { .x = bullets[i].x, .y = bullets[i].y, .w = bulletWidth, .h = bulletHeight };
+            SDL_RenderCopy(gRenderer, bulletTexture, NULL, &dstBullet);
+        }
+    }
+
     // Render survivor
     SDL_Rect srcSurv = { .x = (survivor.frameX / survivor.animSpeed) * survivor.w, .y = survivor.frameY * survivor.h, .w = survivor.w, .h = survivor.h };
     SDL_Rect dstSurv = { .x = survivor.x, .y = survivor.y, .w = survivor.w, .h = survivor.h };
     SDL_RendererFlip flip = survivor.scaleX == 1 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
     SDL_RenderCopyEx(gRenderer, survivor.texture, &srcSurv, &dstSurv, 0, NULL, flip); 
+    
+    // Update the screen
+    SDL_RenderPresent(gRenderer);
 
     survivor.frameX++;
     if (survivor.frameX / survivor.animSpeed >= 4) {
+        survivor.animCompleted = true;
         survivor.frameX = 0;
     }
+
 }
 
 int main(int argc, char* args[]) {
@@ -272,14 +366,10 @@ int main(int argc, char* args[]) {
                 // Update game
                 update();
 
-                // Clear screen
-                SDL_RenderClear(gRenderer);
                 
                 // Render game
                 render();
 
-                // Update the screen
-                SDL_RenderPresent(gRenderer);
             }
         }
 	}
