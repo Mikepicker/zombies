@@ -28,9 +28,7 @@ SDL_Renderer* gRenderer = NULL;
 
 // Game objects
 struct Background {
-    SDL_Texture* bg_0;
-    SDL_Texture* bg_1;
-    SDL_Texture* bg_2;
+    SDL_Texture* texture;
 };
 
 struct Platform {
@@ -105,11 +103,9 @@ bool loadMedia() {
     bool success = true;
 
     // Init background
-    background.bg_0 = loadTexture("assets/bg_0.png");
-    background.bg_1 = loadTexture("assets/bg_1.png");
-    background.bg_2 = loadTexture("assets/bg_2.png");
+    background.texture = loadTexture("assets/background.png");
 
-    if (background.bg_0 == NULL || background.bg_1 == NULL || background.bg_2 == NULL) {
+    if (background.texture == NULL) {
         printf("Failed to load background!\n");
         success = false;
     }
@@ -167,12 +163,8 @@ SDL_Texture* loadTexture(std::string path) {
 void close() {
 
     //Free loaded image
-    SDL_DestroyTexture(background.bg_0);
-    SDL_DestroyTexture(background.bg_1);
-    SDL_DestroyTexture(background.bg_2);
-    background.bg_0 = NULL;
-    background.bg_1 = NULL;
-    background.bg_2 = NULL;
+    SDL_DestroyTexture(background.texture);
+    background.texture = NULL;
 
     SDL_DestroyTexture(platform.texture);
     platform.texture = NULL;
@@ -224,9 +216,7 @@ void render() {
 
     // Render bg
     SDL_Rect dst = { .x = 0, .y = SCREEN_HEIGHT-128, .w = 512, .h = 128 };
-    SDL_RenderCopy(gRenderer, background.bg_0, NULL, &dst);
-    SDL_RenderCopy(gRenderer, background.bg_1, NULL, &dst);
-    SDL_RenderCopy(gRenderer, background.bg_2, NULL, &dst);
+    SDL_RenderCopy(gRenderer, background.texture, NULL, &dst);
 
     // Render platform
     SDL_Rect dstPlatf = { .x = platform.x, .y = platform.y, .w = platform.w, .h = platform.h };
