@@ -38,11 +38,13 @@ struct Platform {
 };
 
 struct Survivor {
-    int x, y, w, h;
+    float x, y;
+    int w, h;
+    float vX, vY;
     int scaleX, scaleY;
     int frameX, frameY;
-    int animSpeed = 6;
-    int speed = 3;
+    int animSpeed = 5;
+    int speed = 3, jumpSpeed = 10;
     bool animCompleted = false;
     bool shot = false;
     std::string state;
@@ -54,7 +56,7 @@ SDL_Texture* bulletTexture;
 int bulletWidth, bulletHeight;
 int bulletSpeed = 20;
 struct Bullet {
-    int x, y;
+    float x, y;
     int dir = 1;
     bool alive = false;
 };
@@ -66,7 +68,7 @@ struct Bullet bullets[BULLET_COUNT];
 
 // World
 struct World {
-    int gravity = 10;
+    float gravity = 0.5f;
 };
 
 struct World world;
@@ -145,6 +147,8 @@ bool loadMedia() {
     survivor.y = 100;
     survivor.w = 64;
     survivor.h = 64;
+    survivor.vX = 0;
+    survivor.vY = 0;
     survivor.scaleX = 1;
     survivor.scaleY = 1;
     survivor.frameX = 0;
@@ -231,41 +235,82 @@ void shootBullet() {
 // Game logic
 void update() {
 
-    // Physics
-    survivor.y += world.gravity;
+    // Apply gravity
+    survivor.vY += world.gravity;
+    survivor.y += survivor.vY;
+
+    // Motion
+    survivor.x += survivor.vX;
 
     // Platform collision
     if (survivor.y + survivor.h > platform.y &&
         survivor.x + 48 >= platform.x &&
-        survivor.x + survivor.w - 48 <= platform.x + platform.w &&
-        survivor.y + (survivor.h/2) < platform.y) {
-        survivor.y = platform.y - survivor.h; 
-    }
+        survivor.x + survivor.w - 48 <= platform.x + platform.w) {
 
-    // Input processing
-    const Uint8* keys = SDL_GetKeyboardState(NULL);
-    if (survivor.state != "state_shoot") {
-        if (keys[SDL_SCANCODE_D]) {
-            survivor.x += survivor.speed;
-            survivor.scaleX = 1;
-            survivor.frameY = 1;
-            survivor.state = "state_walk";
-        } else if (keys[SDL_SCANCODE_A]) {
-            survivor.x -= survivor.speed;
-            survivor.scaleX = -1;
-            survivor.frameY = 1;
-            survivor.state = "state_walk";
-        } else if (keys[SDL_SCANCODE_J]) {
-            survivor.frameX = 0;
-            survivor.frameY = 2;
-            survivor.animCompleted = false;
-            survivor.shot = false;
-            survivor.state = "state_shoot";
-        } else {
-            survivor.frameX = 0;
+        survivor.y = platform.y - survivor.h; 
+        survivor.vY = 0;
+
+        if (survivor.state == "state_fall" || survivor.state == "state_jump") {
             survivor.frameY = 0;
             survivor.state = "state_idle";
         }
+
+    } else if (survivor.state != "state_jump") {
+        survivor.state = "state_fall";
+    }
+
+
+    // Input processing
+    const Uint8* keys = SDL_GetKeyboardState(NULL);
+    if (survivor.state != "state_shoot" && survivor.state != "state_stab" && survivor.state != "state_fall") {
+        
+        if (survivor.state == "state_jump") {
+            
+            if (keys[SDL_SCANCODE_D]) {
+                survivor.vX = survivor.speed;
+                survivor.scaleX = 1;
+            } else if (keys[SDL_SCANCODE_A]) {
+                survivor.vX = -survivor.speed;
+                survivor.scaleX = -1;
+            } else {
+                survivor.vX = 0;
+            }
+
+        } else {
+            
+            if (keys[SDL_SCANCODE_W]) {
+                survivor.vY = -survivor.jumpSpeed;
+                survivor.frameY = 3;
+                survivor.state = "state_jump";
+            } else if (keys[SDL_SCANCODE_J]) {
+                survivor.frameX = 0;
+                survivor.frameY = 2;
+                survivor.vX = 0;
+                survivor.animCompleted = false;
+                survivor.shot = false;
+                survivor.state = "state_shoot";
+            } else if (keys[SDL_SCANCODE_K]) {
+                survivor.frameX = 0;
+                survivor.frameY = 5;
+                survivor.vX = 0;
+                survivor.animCompleted = false;
+                survivor.state = "state_stab";
+            } else if (keys[SDL_SCANCODE_D]) {
+                survivor.vX = survivor.speed;
+                survivor.scaleX = 1;
+                survivor.frameY = 1;
+                survivor.state = "state_walk";
+            } else if (keys[SDL_SCANCODE_A]) {
+                survivor.vX = -survivor.speed;
+                survivor.scaleX = -1;
+                survivor.frameY = 1;
+                survivor.state = "state_walk";
+            } else {
+                survivor.frameY = 0;
+                survivor.vX = 0;
+                survivor.state = "state_idle";
+            }
+       }
     }
 
     // Player states
@@ -275,6 +320,14 @@ void update() {
             survivor.shot = true;
             shootBullet();
         }
+
+        if (survivor.animCompleted) {
+            survivor.frameY = 0;
+            survivor.state = "state_idle";
+        }
+    }
+
+    if (survivor.state == "state_stab") {
 
         if (survivor.animCompleted) {
             survivor.frameY = 0;
@@ -310,14 +363,14 @@ void render() {
     // Render bullets
     for (int i = 0; i < BULLET_COUNT; i++) {
         if (bullets[i].alive) {
-            SDL_Rect dstBullet = { .x = bullets[i].x, .y = bullets[i].y, .w = bulletWidth, .h = bulletHeight };
+            SDL_Rect dstBullet = { .x = (int)bullets[i].x, .y = (int)bullets[i].y, .w = bulletWidth, .h = bulletHeight };
             SDL_RenderCopy(gRenderer, bulletTexture, NULL, &dstBullet);
         }
     }
 
     // Render survivor
     SDL_Rect srcSurv = { .x = (survivor.frameX / survivor.animSpeed) * survivor.w, .y = survivor.frameY * survivor.h, .w = survivor.w, .h = survivor.h };
-    SDL_Rect dstSurv = { .x = survivor.x, .y = survivor.y, .w = survivor.w, .h = survivor.h };
+    SDL_Rect dstSurv = { .x = (int)survivor.x, .y = (int)survivor.y, .w = survivor.w, .h = survivor.h };
     SDL_RendererFlip flip = survivor.scaleX == 1 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
     SDL_RenderCopyEx(gRenderer, survivor.texture, &srcSurv, &dstSurv, 0, NULL, flip); 
     
