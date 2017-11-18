@@ -3,6 +3,8 @@
 #include <SDL2/SDL_image.h>
 #include <stdio.h>
 #include <string>
+#include <stdlib.h>
+#include <time.h>
 
 // Screen dimension constants
 const int SCREEN_WIDTH = 512;
@@ -51,6 +53,24 @@ struct Survivor {
     SDL_Texture* texture;
 };
 
+const int ZOMBIE_COUNT = 20;
+const int SPAWN_FREQ = 3;
+unsigned int lastSpawnTime = 0, currentTime;
+int zombieWidth = 64;
+int zombieHeight = 64;
+int zombieAnimSpeed = 5;
+int zombieSpeed = 3;
+SDL_Texture* zombieTexture;
+struct Zombie {
+    float x, y;
+    float vX, vY;
+    int dir;
+    int frameX, frameY;
+    bool animCompleted = false;
+    bool alive = false;
+    std::string state;
+};
+
 const int BULLET_COUNT = 10;
 SDL_Texture* bulletTexture;
 int bulletWidth, bulletHeight;
@@ -65,6 +85,7 @@ struct Background background;
 struct Platform platform;
 struct Survivor survivor;
 struct Bullet bullets[BULLET_COUNT];
+struct Zombie zombies[ZOMBIE_COUNT];
 
 // World
 struct World {
@@ -72,6 +93,50 @@ struct World {
 };
 
 struct World world;
+
+// Utils
+int randInRange(int min, int max) {
+    return rand() % (max + 1 - min) + min;
+}
+
+void spawnZombie() {
+    for (int i = 0; i < ZOMBIE_COUNT; i++) {
+        if (!zombies[i].alive) {
+            zombies[i].frameX = 0;
+            zombies[i].frameY = 0;
+            zombies[i].x = randInRange(platform.x, platform.x + platform.w - zombieWidth);
+            zombies[i].dir = survivor.x - zombies[i].x > 0 ? 1 : -1;
+            zombies[i].y = 0;
+            zombies[i].alive = true;
+            zombies[i].state = "state_walk";
+            return;
+        }
+    }
+}
+
+void shootBullet() {
+
+    for (int i = 0; i < BULLET_COUNT; i++) {
+        if (!bullets[i].alive) {
+            if (survivor.scaleX == 1) {
+                bullets[i].x = survivor.x + 48;
+            } else {
+                bullets[i].x = survivor.x + 16;
+            }
+
+            bullets[i].y = survivor.y + 32;
+            bullets[i].dir = survivor.scaleX;
+            bullets[i].alive = true;
+            return;
+        }
+    }
+}
+
+bool platformCollision(float x, float y, int w, int h) {
+    return y + h > platform.y &&
+        x + 48 >= platform.x &&
+        x + w - 48 <= platform.x + platform.w;
+}
 
 bool init() {
 
@@ -118,6 +183,9 @@ bool loadMedia() {
 
     // Loading success flag
     bool success = true;
+    
+    // Seed random number generator
+    srand(time(NULL));
 
     // Init background
     background.texture = loadTexture("assets/background.png");
@@ -159,10 +227,15 @@ bool loadMedia() {
         success = false;
     }
 
+    // Init zombie
+    zombieTexture = loadTexture("assets/zombie.png");
+    spawnZombie();
+
     // Init bullet
     bulletTexture = loadTexture("assets/bullet.png");
     SDL_QueryTexture(bulletTexture, NULL, NULL, &bulletWidth, &bulletHeight);
 
+    
     return success;
 }
 
@@ -213,24 +286,6 @@ void close() {
     SDL_Quit();
 }
 
-// Utils
-void shootBullet() {
-
-    for (int i = 0; i < BULLET_COUNT; i++) {
-        if (!bullets[i].alive) {
-            if (survivor.scaleX == 1) {
-                bullets[i].x = survivor.x + 48;
-            } else {
-                bullets[i].x = survivor.x + 16;
-            }
-
-            bullets[i].y = survivor.y + 32;
-            bullets[i].dir = survivor.scaleX;
-            bullets[i].alive = true;
-            return;
-        }
-    }
-}
 
 // Game logic
 void update() {
@@ -243,9 +298,7 @@ void update() {
     survivor.x += survivor.vX;
 
     // Platform collision
-    if (survivor.y + survivor.h > platform.y &&
-        survivor.x + 48 >= platform.x &&
-        survivor.x + survivor.w - 48 <= platform.x + platform.w) {
+    if (platformCollision(survivor.x, survivor.y, survivor.w, survivor.h)) {
 
         survivor.y = platform.y - survivor.h; 
         survivor.vY = 0;
@@ -335,6 +388,41 @@ void update() {
         }
     }
 
+    // Zombies
+    for (int i = 0; i < ZOMBIE_COUNT; i++) {
+        if (zombies[i].alive) {
+
+            // Apply gravity
+            zombies[i].vY += world.gravity;
+            zombies[i].y += zombies[i].vY;
+
+            // Motion
+            zombies[i].x += zombies[i].vX;
+            zombies[i].vX = zombieSpeed * zombies[i].dir;
+
+            // Platform
+            if (platformCollision(zombies[i].x, zombies[i].y, zombieWidth, zombieHeight)) {
+                zombies[i].y = platform.y - zombieHeight; 
+                zombies[i].vY = 0;
+            } else {
+                zombies[i].vX = 0;
+            }
+
+            // Death
+            if (zombies[i].y > SCREEN_HEIGHT) {
+                zombies[i].alive = false;
+            }
+
+        }
+    }
+
+    // Spawn zombie every N seconds
+    currentTime = SDL_GetTicks();
+    if (currentTime > lastSpawnTime + SPAWN_FREQ * 1000) {
+        spawnZombie();
+        lastSpawnTime = currentTime;
+    }
+
     // Bullets
     for (int i = 0; i < BULLET_COUNT; i++) {
         if (bullets[i].alive) {
@@ -373,14 +461,32 @@ void render() {
     SDL_Rect dstSurv = { .x = (int)survivor.x, .y = (int)survivor.y, .w = survivor.w, .h = survivor.h };
     SDL_RendererFlip flip = survivor.scaleX == 1 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
     SDL_RenderCopyEx(gRenderer, survivor.texture, &srcSurv, &dstSurv, 0, NULL, flip); 
+
+    // Render zombies
+    for (int i = 0; i < ZOMBIE_COUNT; i++) {
+        if (zombies[i].alive) {
+            SDL_Rect srcZombie = { .x = (zombies[i].frameX / zombieAnimSpeed) * zombieWidth, .y = zombies[i].frameY * zombieHeight, .w = zombieWidth, .h = zombieHeight };
+            SDL_Rect dstZombie = { .x = (int)zombies[i].x, .y = (int)zombies[i].y, .w = zombieWidth, .h = zombieHeight };
+            SDL_RendererFlip flip = zombies[i].dir == 1 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
+            SDL_RenderCopyEx(gRenderer, zombieTexture, &srcZombie, &dstZombie, 0, NULL, flip);
+        }
+    }
     
     // Update the screen
     SDL_RenderPresent(gRenderer);
 
+    // Update frames
     survivor.frameX++;
     if (survivor.frameX / survivor.animSpeed >= 4) {
         survivor.animCompleted = true;
         survivor.frameX = 0;
+    }
+
+    for (int i = 0; i < ZOMBIE_COUNT; i++) {
+        zombies[i].frameX++;
+        if (zombies[i].alive && zombies[i].frameX / zombieAnimSpeed >= 4) {
+           zombies[i].frameX = 0;
+        }
     }
 
 }
