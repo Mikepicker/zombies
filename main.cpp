@@ -49,6 +49,8 @@ struct Survivor {
     int speed = 3, jumpSpeed = 10;
     bool animCompleted = false;
     bool shot = false;
+    bool stab = false;
+    bool alive = true;
     std::string state;
     SDL_Texture* texture;
 };
@@ -56,27 +58,28 @@ struct Survivor {
 const int ZOMBIE_COUNT = 20;
 const int SPAWN_FREQ = 3;
 unsigned int lastSpawnTime = 0, currentTime;
-int zombieWidth = 64;
-int zombieHeight = 64;
-int zombieAnimSpeed = 5;
+int zombieAnimSpeed = 8;
 int zombieSpeed = 3;
 SDL_Texture* zombieTexture;
 struct Zombie {
     float x, y;
+    int w = 64;
+    int h = 64;
     float vX, vY;
     int dir;
     int frameX, frameY;
     bool animCompleted = false;
+    bool attack = false;
     bool alive = false;
     std::string state;
 };
 
 const int BULLET_COUNT = 10;
 SDL_Texture* bulletTexture;
-int bulletWidth, bulletHeight;
 int bulletSpeed = 20;
 struct Bullet {
     float x, y;
+    int w, h;
     int dir = 1;
     bool alive = false;
 };
@@ -104,11 +107,11 @@ void spawnZombie() {
         if (!zombies[i].alive) {
             zombies[i].frameX = 0;
             zombies[i].frameY = 0;
-            zombies[i].x = randInRange(platform.x, platform.x + platform.w - zombieWidth);
+            zombies[i].x = randInRange(platform.x, platform.x + platform.w - zombies[i].w);
             zombies[i].dir = survivor.x - zombies[i].x > 0 ? 1 : -1;
             zombies[i].y = 0;
             zombies[i].alive = true;
-            zombies[i].state = "state_walk";
+            zombies[i].state = "state_fall";
             return;
         }
     }
@@ -128,6 +131,48 @@ void shootBullet() {
             bullets[i].dir = survivor.scaleX;
             bullets[i].alive = true;
             return;
+        }
+    }
+}
+
+bool collision(float xA, float xB, float yA, float yB, int wA, int wB, int hA, int hB) {
+    if (yA + hA <= yB) {
+        return false;
+    }
+
+    if (yA >= yB + hB) {
+        return false;
+    }
+
+    if (xA + wA <= xB) {
+        return false;
+    }
+
+    if (xA >= xB + wB) {
+        return false;
+    }
+
+    return true;
+}
+
+void hitZombies(struct Bullet *bullet) {
+
+    for (int i = 0; i < ZOMBIE_COUNT; i++) {
+        if (collision(bullet->x, zombies[i].x, bullet->y, zombies[i].y, bullet->w, zombies[i].w, bullet->h, zombies[i].h)) {
+            zombies[i].vX = bullet->dir * 10;
+            zombies[i].state = "state_hit";
+            bullet->alive = false;
+        }
+    }
+}
+
+void stabZombies() {
+
+    for (int i = 0; i < ZOMBIE_COUNT; i++) {
+        if (collision(survivor.x, zombies[i].x, survivor.y, zombies[i].y, survivor.w, zombies[i].w, survivor.h, zombies[i].h)) {
+            zombies[i].vY = -15;
+            zombies[i].vX = survivor.scaleX * 5;
+            zombies[i].state = "state_hit";
         }
     }
 }
@@ -229,12 +274,12 @@ bool loadMedia() {
 
     // Init zombie
     zombieTexture = loadTexture("assets/zombie.png");
-    spawnZombie();
 
     // Init bullet
     bulletTexture = loadTexture("assets/bullet.png");
-    SDL_QueryTexture(bulletTexture, NULL, NULL, &bulletWidth, &bulletHeight);
-
+    for (int i = 0; i < BULLET_COUNT; i++) {
+        SDL_QueryTexture(bulletTexture, NULL, NULL, &bullets[i].w, &bullets[i].h);
+    }
     
     return success;
 }
@@ -290,101 +335,113 @@ void close() {
 // Game logic
 void update() {
 
-    // Apply gravity
-    survivor.vY += world.gravity;
-    survivor.y += survivor.vY;
+    if (survivor.state != "state_dead") {
 
-    // Motion
-    survivor.x += survivor.vX;
+        // Apply gravity
+        survivor.vY += world.gravity;
+        survivor.y += survivor.vY;
 
-    // Platform collision
-    if (platformCollision(survivor.x, survivor.y, survivor.w, survivor.h)) {
+        // Motion
+        survivor.x += survivor.vX;
 
-        survivor.y = platform.y - survivor.h; 
-        survivor.vY = 0;
+        // Platform collision
+        if (platformCollision(survivor.x, survivor.y, survivor.w, survivor.h)) {
 
-        if (survivor.state == "state_fall" || survivor.state == "state_jump") {
-            survivor.frameY = 0;
-            survivor.state = "state_idle";
-        }
+            survivor.y = platform.y - survivor.h; 
+            survivor.vY = 0;
 
-    } else if (survivor.state != "state_jump") {
-        survivor.state = "state_fall";
-    }
-
-
-    // Input processing
-    const Uint8* keys = SDL_GetKeyboardState(NULL);
-    if (survivor.state != "state_shoot" && survivor.state != "state_stab" && survivor.state != "state_fall") {
-        
-        if (survivor.state == "state_jump") {
-            
-            if (keys[SDL_SCANCODE_D]) {
-                survivor.vX = survivor.speed;
-                survivor.scaleX = 1;
-            } else if (keys[SDL_SCANCODE_A]) {
-                survivor.vX = -survivor.speed;
-                survivor.scaleX = -1;
-            } else {
-                survivor.vX = 0;
-            }
-
-        } else {
-            
-            if (keys[SDL_SCANCODE_W]) {
-                survivor.vY = -survivor.jumpSpeed;
-                survivor.frameY = 3;
-                survivor.state = "state_jump";
-            } else if (keys[SDL_SCANCODE_J]) {
-                survivor.frameX = 0;
-                survivor.frameY = 2;
-                survivor.vX = 0;
-                survivor.animCompleted = false;
-                survivor.shot = false;
-                survivor.state = "state_shoot";
-            } else if (keys[SDL_SCANCODE_K]) {
-                survivor.frameX = 0;
-                survivor.frameY = 5;
-                survivor.vX = 0;
-                survivor.animCompleted = false;
-                survivor.state = "state_stab";
-            } else if (keys[SDL_SCANCODE_D]) {
-                survivor.vX = survivor.speed;
-                survivor.scaleX = 1;
-                survivor.frameY = 1;
-                survivor.state = "state_walk";
-            } else if (keys[SDL_SCANCODE_A]) {
-                survivor.vX = -survivor.speed;
-                survivor.scaleX = -1;
-                survivor.frameY = 1;
-                survivor.state = "state_walk";
-            } else {
+            if (survivor.state == "state_fall" || survivor.state == "state_jump") {
                 survivor.frameY = 0;
-                survivor.vX = 0;
                 survivor.state = "state_idle";
             }
-       }
-    }
 
-    // Player states
-    if (survivor.state == "state_shoot") {
-
-        if (survivor.frameX / survivor.animSpeed == 2 && !survivor.shot) {
-            survivor.shot = true;
-            shootBullet();
+        } else if (survivor.state != "state_jump") {
+            survivor.state = "state_fall";
         }
 
-        if (survivor.animCompleted) {
-            survivor.frameY = 0;
-            survivor.state = "state_idle";
+        // Input processing
+        const Uint8* keys = SDL_GetKeyboardState(NULL);
+        if (survivor.state != "state_shoot" && survivor.state != "state_stab" && survivor.state != "state_fall") {
+            
+            if (survivor.state == "state_jump") {
+                
+                if (keys[SDL_SCANCODE_D]) {
+                    survivor.vX = survivor.speed;
+                    survivor.scaleX = 1;
+                } else if (keys[SDL_SCANCODE_A]) {
+                    survivor.vX = -survivor.speed;
+                    survivor.scaleX = -1;
+                } else {
+                    survivor.vX = 0;
+                }
+
+            } else {
+                
+                if (keys[SDL_SCANCODE_W]) {
+                    survivor.vY = -survivor.jumpSpeed;
+                    survivor.frameY = 3;
+                    survivor.state = "state_jump";
+                } else if (keys[SDL_SCANCODE_J]) {
+                    survivor.frameX = 0;
+                    survivor.frameY = 2;
+                    survivor.vX = 0;
+                    survivor.animCompleted = false;
+                    survivor.shot = false;
+                    survivor.state = "state_shoot";
+                } else if (keys[SDL_SCANCODE_K]) {
+                    survivor.frameX = 0;
+                    survivor.frameY = 5;
+                    survivor.vX = 0;
+                    survivor.animCompleted = false;
+                    survivor.stab = false;
+                    survivor.state = "state_stab";
+                } else if (keys[SDL_SCANCODE_D]) {
+                    survivor.vX = survivor.speed;
+                    survivor.scaleX = 1;
+                    survivor.frameY = 1;
+                    survivor.state = "state_walk";
+                } else if (keys[SDL_SCANCODE_A]) {
+                    survivor.vX = -survivor.speed;
+                    survivor.scaleX = -1;
+                    survivor.frameY = 1;
+                    survivor.state = "state_walk";
+                } else {
+                    survivor.frameY = 0;
+                    survivor.vX = 0;
+                    survivor.state = "state_idle";
+                }
+           }
         }
-    }
 
-    if (survivor.state == "state_stab") {
+        // Player states
+        if (survivor.state == "state_shoot") {
 
+            if (survivor.frameX / survivor.animSpeed == 2 && !survivor.shot) {
+                survivor.shot = true;
+                shootBullet();
+            }
+
+            if (survivor.animCompleted) {
+                survivor.frameY = 0;
+                survivor.state = "state_idle";
+            }
+        }
+
+        if (survivor.state == "state_stab") {
+
+            if (survivor.frameX / survivor.animSpeed == 2 && !survivor.stab) {
+                survivor.stab = true;
+                stabZombies();
+            }
+
+            if (survivor.animCompleted) {
+                survivor.frameY = 0;
+                survivor.state = "state_idle";
+            }
+        }
+    } else { // state dead
         if (survivor.animCompleted) {
-            survivor.frameY = 0;
-            survivor.state = "state_idle";
+            survivor.alive = false;
         }
     }
 
@@ -392,26 +449,72 @@ void update() {
     for (int i = 0; i < ZOMBIE_COUNT; i++) {
         if (zombies[i].alive) {
 
+            // Out of screen
+            if (zombies[i].y > SCREEN_HEIGHT) {
+                zombies[i].alive = false;
+            }
+
             // Apply gravity
             zombies[i].vY += world.gravity;
             zombies[i].y += zombies[i].vY;
 
             // Motion
             zombies[i].x += zombies[i].vX;
-            zombies[i].vX = zombieSpeed * zombies[i].dir;
 
             // Platform
-            if (platformCollision(zombies[i].x, zombies[i].y, zombieWidth, zombieHeight)) {
-                zombies[i].y = platform.y - zombieHeight; 
-                zombies[i].vY = 0;
-            } else {
-                zombies[i].vX = 0;
+            if (zombies[i].state == "state_hit") {
+                continue;
             }
 
-            // Death
-            if (zombies[i].y > SCREEN_HEIGHT) {
-                zombies[i].alive = false;
+            if (platformCollision(zombies[i].x, zombies[i].y, zombies[i].w, zombies[i].h)) {
+                zombies[i].y = platform.y - zombies[i].h; 
+                zombies[i].vY = 0;
+
+                if (zombies[i].state == "state_fall") {
+                    zombies[i].state = "state_walk";
+                }
+            } else {
+                zombies[i].vX = 0;
+                zombies[i].state = "state_fall";
             }
+
+            if (zombies[i].state == "state_walk") {
+
+                // Move
+                zombies[i].vX = zombieSpeed * zombies[i].dir;
+
+                // Attack survivor if colliding
+                if (survivor.state != "state_dead" && collision(zombies[i].x, survivor.x, zombies[i].y, survivor.y, zombies[i].w, survivor.w, zombies[i].h, survivor.h)) {
+                    zombies[i].frameX = 0;
+                    zombies[i].frameY = 2;
+                    zombies[i].vX = 0;
+                    zombies[i].attack = false;
+                    zombies[i].animCompleted = false;
+                    zombies[i].state = "state_attack";
+                }
+            }
+
+            if (zombies[i].state == "state_attack") {
+
+                // Attack survivor
+                if (zombies[i].frameX / zombieAnimSpeed == 3 && !zombies[i].attack && survivor.state != "state_jump") {
+                    zombies[i].attack = true;
+                    survivor.frameX = 0;
+                    survivor.frameY = 4;
+                    survivor.vX = survivor.vY = 0;
+                    survivor.animCompleted = false;
+                    survivor.state = "state_dead";
+                }
+                
+                if (zombies[i].animCompleted) {
+                    zombies[i].frameX = 0;
+                    zombies[i].frameY = 0;
+                    zombies[i].state = "state_walk";
+                }
+
+            }
+
+            
 
         }
     }
@@ -427,10 +530,14 @@ void update() {
     for (int i = 0; i < BULLET_COUNT; i++) {
         if (bullets[i].alive) {
             bullets[i].x += bulletSpeed * bullets[i].dir;
-
-            if (bullets[i].x + bulletWidth < 0 || bullets[i].x > SCREEN_WIDTH) {
+            
+            // Out of screen
+            if (bullets[i].x + bullets[i].w < 0 || bullets[i].x > SCREEN_WIDTH) {
                 bullets[i].alive = false;
             }
+
+            // Hit zombie
+            hitZombies(&bullets[i]);
         }
     }
 }
@@ -451,22 +558,25 @@ void render() {
     // Render bullets
     for (int i = 0; i < BULLET_COUNT; i++) {
         if (bullets[i].alive) {
-            SDL_Rect dstBullet = { .x = (int)bullets[i].x, .y = (int)bullets[i].y, .w = bulletWidth, .h = bulletHeight };
+            SDL_Rect dstBullet = { .x = (int)bullets[i].x, .y = (int)bullets[i].y, .w = bullets[i].w, .h = bullets[i].h };
             SDL_RenderCopy(gRenderer, bulletTexture, NULL, &dstBullet);
         }
     }
 
     // Render survivor
-    SDL_Rect srcSurv = { .x = (survivor.frameX / survivor.animSpeed) * survivor.w, .y = survivor.frameY * survivor.h, .w = survivor.w, .h = survivor.h };
-    SDL_Rect dstSurv = { .x = (int)survivor.x, .y = (int)survivor.y, .w = survivor.w, .h = survivor.h };
-    SDL_RendererFlip flip = survivor.scaleX == 1 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
-    SDL_RenderCopyEx(gRenderer, survivor.texture, &srcSurv, &dstSurv, 0, NULL, flip); 
+    //printf("%d\n", survivor.alive);
+    if (survivor.alive) {
+        SDL_Rect srcSurv = { .x = (survivor.frameX / survivor.animSpeed) * survivor.w, .y = survivor.frameY * survivor.h, .w = survivor.w, .h = survivor.h };
+        SDL_Rect dstSurv = { .x = (int)survivor.x, .y = (int)survivor.y, .w = survivor.w, .h = survivor.h };
+        SDL_RendererFlip flip = survivor.scaleX == 1 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
+        SDL_RenderCopyEx(gRenderer, survivor.texture, &srcSurv, &dstSurv, 0, NULL, flip); 
+    }
 
     // Render zombies
     for (int i = 0; i < ZOMBIE_COUNT; i++) {
         if (zombies[i].alive) {
-            SDL_Rect srcZombie = { .x = (zombies[i].frameX / zombieAnimSpeed) * zombieWidth, .y = zombies[i].frameY * zombieHeight, .w = zombieWidth, .h = zombieHeight };
-            SDL_Rect dstZombie = { .x = (int)zombies[i].x, .y = (int)zombies[i].y, .w = zombieWidth, .h = zombieHeight };
+            SDL_Rect srcZombie = { .x = (zombies[i].frameX / zombieAnimSpeed) * zombies[i].w, .y = zombies[i].frameY * zombies[i].h, .w = zombies[i].w, .h = zombies[i].h };
+            SDL_Rect dstZombie = { .x = (int)zombies[i].x, .y = (int)zombies[i].y, .w = zombies[i].w, .h = zombies[i].h };
             SDL_RendererFlip flip = zombies[i].dir == 1 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
             SDL_RenderCopyEx(gRenderer, zombieTexture, &srcZombie, &dstZombie, 0, NULL, flip);
         }
@@ -485,7 +595,8 @@ void render() {
     for (int i = 0; i < ZOMBIE_COUNT; i++) {
         zombies[i].frameX++;
         if (zombies[i].alive && zombies[i].frameX / zombieAnimSpeed >= 4) {
-           zombies[i].frameX = 0;
+            zombies[i].animCompleted = true;
+            zombies[i].frameX = 0;
         }
     }
 
