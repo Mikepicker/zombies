@@ -158,7 +158,7 @@ bool collision(float xA, float xB, float yA, float yB, int wA, int wB, int hA, i
 void hitZombies(struct Bullet *bullet) {
 
     for (int i = 0; i < ZOMBIE_COUNT; i++) {
-        if (collision(bullet->x, zombies[i].x, bullet->y, zombies[i].y, bullet->w, zombies[i].w, bullet->h, zombies[i].h)) {
+        if (zombies[i].alive && collision(bullet->x, zombies[i].x, bullet->y, zombies[i].y, bullet->w, zombies[i].w, bullet->h, zombies[i].h)) {
             zombies[i].vX = bullet->dir * 10;
             zombies[i].state = "state_hit";
             bullet->alive = false;
@@ -169,7 +169,7 @@ void hitZombies(struct Bullet *bullet) {
 void stabZombies() {
 
     for (int i = 0; i < ZOMBIE_COUNT; i++) {
-        if (collision(survivor.x, zombies[i].x, survivor.y, zombies[i].y, survivor.w, zombies[i].w, survivor.h, zombies[i].h)) {
+        if (zombies[i].alive && collision(survivor.x, zombies[i].x, survivor.y, zombies[i].y, survivor.w, zombies[i].w, survivor.h, zombies[i].h)) {
             zombies[i].vY = -15;
             zombies[i].vX = survivor.scaleX * 5;
             zombies[i].state = "state_hit";
@@ -319,6 +319,9 @@ void close() {
 
     SDL_DestroyTexture(bulletTexture);
     bulletTexture = NULL;
+
+    SDL_DestroyTexture(zombieTexture);
+    zombieTexture = NULL;
 
     //Destroy window
     SDL_DestroyRenderer(gRenderer);
