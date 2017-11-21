@@ -1,6 +1,7 @@
 // Using SDL and standard IO
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <stdio.h>
 #include <string>
 #include <stdlib.h>
@@ -27,6 +28,18 @@ SDL_Window* gWindow = NULL;
 	
 // Renderer
 SDL_Renderer* gRenderer = NULL;
+
+// Font
+TTF_Font* gFont = NULL;
+
+// Score
+int score = 0;
+SDL_Texture* scoreTexture;
+int scoreWidth, scoreHeight;
+
+// Data to save (enough for the high score)
+Sint32 highScore;
+Sint32 dataToSave[1];
 
 // Game objects
 struct Background {
@@ -98,6 +111,29 @@ struct World {
 struct World world;
 
 // Utils
+bool renderScoreText(std::string textureText, SDL_Color textColor) {
+    
+    // Free old texture
+    SDL_DestroyTexture(scoreTexture);
+
+    SDL_Surface* textSurface = TTF_RenderText_Solid(gFont, textureText.c_str(), textColor);
+    if (textSurface == NULL) {
+        printf("Unable to render text surface! SDL_ttf Error: %s\n", TTF_GetError());
+    } else {
+        scoreTexture = SDL_CreateTextureFromSurface(gRenderer, textSurface);
+        if (scoreTexture == NULL) {
+            printf("Unable to create texture from rendered text! SDL Error: %s\n", SDL_GetError());
+        } else {
+            scoreWidth = textSurface->w;
+            scoreHeight = textSurface->h;
+        }
+
+        SDL_FreeSurface(textSurface);
+    }
+
+    return scoreTexture != NULL;
+}
+
 int randInRange(int min, int max) {
     return rand() % (max + 1 - min) + min;
 }
@@ -183,6 +219,43 @@ bool platformCollision(float x, float y, int w, int h) {
         x + w - 48 <= platform.x + platform.w;
 }
 
+// Restart game
+void restart() {
+    survivor.x = 200;
+    survivor.y = 100;
+    survivor.vX = 0;
+    survivor.vY = 0;
+    survivor.scaleX = 1;
+    survivor.frameX = 0;
+    survivor.frameY = 0;
+    survivor.alive = true;
+    survivor.animCompleted = false;
+    survivor.state = "state_idle";
+
+    score = 0;
+
+    for (int i = 0; i < ZOMBIE_COUNT; i++) {
+        zombies[i].alive = false;
+    }
+
+}
+
+// Save high score
+void saveHighScore() {
+
+    if (score < highScore) {
+        return;
+    }
+
+    highScore = score;
+
+    SDL_RWops* file = SDL_RWFromFile("score.bin", "r+b");
+    dataToSave[0] = highScore;
+    SDL_RWwrite(file, &dataToSave, sizeof(Sint32), 1);
+    SDL_RWclose(file);
+}
+
+
 bool init() {
 
 	// Initialization flag
@@ -217,6 +290,12 @@ bool init() {
                     printf("SDL_image could not initialize! SDL_image Error: %s\n", IMG_GetError());
                     success = false;
                 }
+
+                //Initialize SDL_ttf
+                if(TTF_Init() == -1) {
+                    printf( "SDL_ttf could not initialize! SDL_ttf Error: %s\n", TTF_GetError() );
+                    success = false;
+                }
             }
 		}
 	}
@@ -231,6 +310,38 @@ bool loadMedia() {
     
     // Seed random number generator
     srand(time(NULL));
+
+    // Init font
+    gFont = TTF_OpenFont("assets/3Dventure.ttf", 28);
+    if (gFont == NULL) {
+        printf("Failed to load font! SDL_ttf Error: %s\n", TTF_GetError());
+    }
+
+    // Load high score from file
+    SDL_RWops* file = SDL_RWFromFile("score.bin", "r+b");
+
+    if (file == NULL) {
+        printf("Warning: unable to open file! SDL Error: %s\n", SDL_GetError());
+
+        // Create file for writing
+        file = SDL_RWFromFile("score.bin", "w+b");
+
+        if (file != NULL) {
+            printf("New file created\n");
+            dataToSave[0] = 0;
+            SDL_RWwrite(file, &dataToSave, sizeof(Sint32), 1);
+            SDL_RWclose(file);
+        } else {
+            printf("Error: Unable to create file! SDL Error: %s\n", SDL_GetError());
+            success = false;
+        }
+
+    } else {
+        printf("Loading file...\n");
+        SDL_RWread(file, &dataToSave, sizeof(Sint32), 1);
+        highScore = dataToSave[0];
+        SDL_RWclose(file);
+    }
 
     // Init background
     background.texture = loadTexture("assets/background.png");
@@ -329,7 +440,12 @@ void close() {
     gRenderer = NULL;
     gWindow = NULL;
 
-    //Quit SDL subsystems
+    // Free font
+    TTF_CloseFont(gFont);
+    gFont = NULL;
+
+    // Quit SDL subsystems
+    TTF_Quit();
     IMG_Quit();
     SDL_Quit();
 }
@@ -338,8 +454,23 @@ void close() {
 // Game logic
 void update() {
 
+    // Restart game
+    if (survivor.state == "state_dead") {
+        const Uint8* keys = SDL_GetKeyboardState(NULL);
+        if (keys[SDL_SCANCODE_R]) {
+            restart();
+        }
+    }
+    // Out of screen
+    if (survivor.y > SCREEN_HEIGHT && survivor.state != "state_dead") {
+        survivor.state = "state_dead";
+        survivor.alive = false;
+        saveHighScore();
+    }
+
     if (survivor.state != "state_dead") {
 
+        
         // Apply gravity
         survivor.vY += world.gravity;
         survivor.y += survivor.vY;
@@ -455,6 +586,7 @@ void update() {
             // Out of screen
             if (zombies[i].y > SCREEN_HEIGHT) {
                 zombies[i].alive = false;
+                score += 10;
             }
 
             // Apply gravity
@@ -507,6 +639,7 @@ void update() {
                     survivor.vX = survivor.vY = 0;
                     survivor.animCompleted = false;
                     survivor.state = "state_dead";
+                    saveHighScore();
                 }
                 
                 if (zombies[i].animCompleted) {
@@ -567,7 +700,6 @@ void render() {
     }
 
     // Render survivor
-    //printf("%d\n", survivor.alive);
     if (survivor.alive) {
         SDL_Rect srcSurv = { .x = (survivor.frameX / survivor.animSpeed) * survivor.w, .y = survivor.frameY * survivor.h, .w = survivor.w, .h = survivor.h };
         SDL_Rect dstSurv = { .x = (int)survivor.x, .y = (int)survivor.y, .w = survivor.w, .h = survivor.h };
@@ -584,6 +716,19 @@ void render() {
             SDL_RenderCopyEx(gRenderer, zombieTexture, &srcZombie, &dstZombie, 0, NULL, flip);
         }
     }
+
+    // Render text
+    SDL_Color textColor = { 0, 0, 0 };
+    std::string text;
+    if (survivor.state == "state_dead") {
+        text = "Press R to restart";
+    } else {
+        text = "Score: " + std::to_string(score) + " - High Score: " + std::to_string(highScore);
+    }
+    renderScoreText(text, textColor);
+
+    SDL_Rect dstScore = { .x = 20, .y = 20, .w = scoreWidth, .h = scoreHeight };
+    SDL_RenderCopy(gRenderer, scoreTexture, NULL, &dstScore);
     
     // Update the screen
     SDL_RenderPresent(gRenderer);
