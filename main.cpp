@@ -39,7 +39,6 @@ int scoreWidth, scoreHeight;
 
 // Data to save (enough for the high score)
 Sint32 highScore;
-Sint32 dataToSave[1];
 
 // Game objects
 struct Background {
@@ -250,8 +249,7 @@ void saveHighScore() {
     highScore = score;
 
     SDL_RWops* file = SDL_RWFromFile("score.bin", "r+b");
-    dataToSave[0] = highScore;
-    SDL_RWwrite(file, &dataToSave, sizeof(Sint32), 1);
+    SDL_RWwrite(file, &highScore, sizeof(Sint32), 1);
     SDL_RWclose(file);
 }
 
@@ -328,8 +326,7 @@ bool loadMedia() {
 
         if (file != NULL) {
             printf("New file created\n");
-            dataToSave[0] = 0;
-            SDL_RWwrite(file, &dataToSave, sizeof(Sint32), 1);
+            SDL_RWwrite(file, &highScore, sizeof(Sint32), 1);
             SDL_RWclose(file);
         } else {
             printf("Error: Unable to create file! SDL Error: %s\n", SDL_GetError());
@@ -338,8 +335,7 @@ bool loadMedia() {
 
     } else {
         printf("Loading file...\n");
-        SDL_RWread(file, &dataToSave, sizeof(Sint32), 1);
-        highScore = dataToSave[0];
+        SDL_RWread(file, &highScore, sizeof(Sint32), 1);
         SDL_RWclose(file);
     }
 
