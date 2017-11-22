@@ -248,7 +248,7 @@ void saveHighScore() {
 
     highScore = score;
 
-    SDL_RWops* file = SDL_RWFromFile("score.bin", "r+b");
+    SDL_RWops* file = SDL_RWFromFile("score.bin", "w+b");
     SDL_RWwrite(file, &highScore, sizeof(Sint32), 1);
     SDL_RWclose(file);
 }
